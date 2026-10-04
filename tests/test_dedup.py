@@ -1584,3 +1584,28 @@ def test_build_merge_dedup_still_merges_stamped_entities_across_files():
     assert labels.count("Decisions") == 3
     assert labels.count("Next steps") == 3
     assert sum(1 for label in labels if "cyril" in label.lower()) == 1
+
+
+def test_extraction_prompts_ask_for_the_node_kind_dedup_reads():
+    """Producer half of #3094: every shipped LLM extraction prompt asks for a
+    `node_kind` drawn from the values dedup actually recognises, so headings
+    are stamped `heading` and entities `entity`. Fails if a prompt drops the
+    field or the two vocabularies drift apart."""
+    from pathlib import Path
+
+    from graphify.dedup import _FILE_ENTITY_NODE_KINDS, _FILE_STRUCTURE_NODE_KINDS
+    from graphify.llm import _extraction_system
+
+    assert "entity" in _FILE_ENTITY_NODE_KINDS
+    assert "heading" in _FILE_STRUCTURE_NODE_KINDS
+    schema_field = '"node_kind":"entity|heading"'
+    pkg = Path(__file__).resolve().parents[1] / "graphify"
+    prompts = {"llm._extraction_system": _extraction_system(),
+               "llm._extraction_system(deep)": _extraction_system(deep=True)}
+    for path in sorted(pkg.glob("skills/*/references/extraction-spec.md")):
+        prompts[str(path.relative_to(pkg))] = path.read_text(encoding="utf-8")
+    for name in ("skill-aider.md", "skill-devin.md"):  # monoliths inline the spec
+        prompts[name] = (pkg / name).read_text(encoding="utf-8")
+    assert len(prompts) > 4
+    missing = [name for name, text in prompts.items() if schema_field not in text]
+    assert not missing, f"extraction prompts without {schema_field}: {missing}"
