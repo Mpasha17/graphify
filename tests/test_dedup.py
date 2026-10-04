@@ -953,15 +953,19 @@ _RATIONALE_BOILER = ("Django app config for apps.platform.cards. No business "
     # identical label on two nodes that are provably NOT their files' own nodes
     # now merges (that is the bug the concept-only gate was causing). What must
     # still never merge is a file's OWN node, so these two rows now carry the
-    # ids the file nodes themselves would be minted with.
+    # ids the file nodes themselves would be minted with. They are stamped
+    # `entity` (#3094) so the own-node proof, not the missing stamp, is what
+    # keeps them apart.
     ({"id": "docs_a", "label": "Getting Started Installation Guide",
-      "file_type": "document", "source_file": "docs/a.md"},
+      "file_type": "document", "node_kind": "entity", "source_file": "docs/a.md"},
      {"id": "docs_b", "label": "Getting Started Installation Guide",
-      "file_type": "document", "source_file": "docs/b.md"}),
+      "file_type": "document", "node_kind": "entity", "source_file": "docs/b.md"}),
     ({"id": "apps_platform_cards_apps", "label": _RATIONALE_BOILER,
-      "file_type": "rationale", "source_file": "apps/platform/cards/apps.py"},
+      "file_type": "rationale", "node_kind": "entity",
+      "source_file": "apps/platform/cards/apps.py"},
      {"id": "apps_platform_cores_apps", "label": _RATIONALE_BOILER,
-      "file_type": "rationale", "source_file": "apps/platform/cores/apps.py"}),
+      "file_type": "rationale", "node_kind": "entity",
+      "source_file": "apps/platform/cores/apps.py"}),
     ({"id": "backend_a_render_frame", "label": "render_frame",
       "file_type": "code", "source_file": "backend_a.py"},
      {"id": "backend_b_render_frame", "label": "render_frame",
@@ -1348,10 +1352,11 @@ def test_reads_as_file_entity_helper():
 def test_dedup_merges_crossfile_document_entity_variants():
     """The reported bug (#296): case/prefix variants of one entity, extracted
     from three different notes and typed `document` by extension, must collapse
-    to a single node."""
+    to a single node once the producer stamps them `entity` (#3094)."""
     nodes = [
         {"id": "journal_2024_03_0%d_cyrilxbt" % i, "label": variant,
-         "file_type": "document", "source_file": "journal/2024-03-0%d.md" % i}
+         "file_type": "document", "node_kind": "entity",
+         "source_file": "journal/2024-03-0%d.md" % i}
         for i, variant in enumerate(_CYRIL_VARIANTS, start=1)
     ]
     result_nodes, _ = deduplicate_entities(nodes, [], communities={})
@@ -1366,9 +1371,9 @@ def test_dedup_merges_crossfile_rationale_entity_variants():
     that type, provably not their files' own nodes, merge on an exact label."""
     nodes = [
         {"id": "svc_alpha_py_retention_window", "label": "Retention Window",
-         "file_type": "rationale", "source_file": "svc/alpha.py"},
+         "file_type": "rationale", "node_kind": "entity", "source_file": "svc/alpha.py"},
         {"id": "svc_beta_py_retention_window", "label": "retention window",
-         "file_type": "rationale", "source_file": "svc/beta.py"},
+         "file_type": "rationale", "node_kind": "entity", "source_file": "svc/beta.py"},
     ]
     result_nodes, _ = deduplicate_entities(nodes, [], communities={})
     assert len(result_nodes) == 1
@@ -1379,12 +1384,13 @@ def test_dedup_never_merges_a_files_own_node_away():
     whose OWN node carries the entity's label must survive as its own node, even
     when a same-label entity node exists in another file."""
     nodes = [
-        # The curated page: its id is exactly the slugified source path.
-        {"id": "people_cyrilxbt", "label": "@cyrilXBT",
-         "file_type": "document", "source_file": "people/@cyrilXBT.md"},
+        # The curated page: its id is exactly the slugified source path. Even
+        # (mis)stamped `entity`, the own-node proof keeps it out (#3094).
+        {"id": "people_cyrilxbt", "label": "@cyrilXBT", "file_type": "document",
+         "node_kind": "entity", "source_file": "people/@cyrilXBT.md"},
         # A mention of the same entity, extracted from a journal note.
-        {"id": "journal_2024_03_01_cyrilxbt", "label": "cyrilXBT",
-         "file_type": "document", "source_file": "journal/2024-03-01.md"},
+        {"id": "journal_2024_03_01_cyrilxbt", "label": "cyrilXBT", "file_type": "document",
+         "node_kind": "entity", "source_file": "journal/2024-03-01.md"},
     ]
     result_nodes, _ = deduplicate_entities(nodes, [], communities={})
     assert len(result_nodes) == 2, (
@@ -1412,9 +1418,9 @@ def test_dedup_crossfile_entity_merge_keeps_the_entropy_gate():
     `document` entity nodes exactly as it does for `concept`."""
     nodes = [
         {"id": "docs_a_api", "label": "API", "file_type": "document",
-         "source_file": "docs/a.md"},
+         "node_kind": "entity", "source_file": "docs/a.md"},
         {"id": "docs_b_api", "label": "API", "file_type": "document",
-         "source_file": "docs/b.md"},
+         "node_kind": "entity", "source_file": "docs/b.md"},
     ]
     result_nodes, _ = deduplicate_entities(nodes, [], communities={})
     assert len(result_nodes) == 2
@@ -1425,9 +1431,10 @@ def test_dedup_crossfile_entity_merge_keeps_the_provenance_gate():
     cannot be proven to be an entity, so it stays out of the merge."""
     nodes = [
         {"id": "orphan_cyrilxbt", "label": "@cyrilXBT",
-         "file_type": "document", "source_file": ""},
+         "file_type": "document", "node_kind": "entity", "source_file": ""},
         {"id": "journal_2024_03_01_cyrilxbt", "label": "cyrilXBT",
-         "file_type": "document", "source_file": "journal/2024-03-01.md"},
+         "file_type": "document", "node_kind": "entity",
+         "source_file": "journal/2024-03-01.md"},
     ]
     result_nodes, _ = deduplicate_entities(nodes, [], communities={})
     assert len(result_nodes) == 2
@@ -1482,3 +1489,98 @@ def test_reads_as_file_entity_trusts_the_node_kind_stamp_only():
     del unstamped["node_kind"]
     assert not _reads_as_file_entity(stamped)
     assert _reads_as_file_entity(unstamped)
+
+
+# -- #3094: unstamped document/rationale nodes stay per-file in Pass 1 --
+#
+# The LLM extraction path never stamped `node_kind`, so a heading it minted
+# (`## Decisions`) was indistinguishable from an entity and the cross-file
+# residue merged every file's copy into one -- whole documents vanished from
+# the graph. Unstamped document/rationale nodes are now held back; only a
+# positive `node_kind: "entity"` stamp (or file_type `concept`) merges across
+# files.
+
+def _session_heading(nid, label, src):
+    # The reporter's node shape, verbatim (#3094).
+    return {"id": nid, "label": label, "file_type": "document", "source_file": src,
+            "source_location": None, "source_url": None, "captured_at": None,
+            "author": None, "contributor": None}
+
+
+def test_build_merge_dedup_keeps_unstamped_headings_per_file():
+    """The reporter's repro (#3094): three files each carrying `Decisions` (two
+    also `Open items`) went in and only one file came out of
+    ``build_merge(dedup=True)``. Every file and every heading must survive."""
+    from graphify.build import build_merge
+
+    extraction = {"nodes": [
+        _session_heading("a_decisions", "Decisions", "Sessions/session-A.md"),
+        _session_heading("b_decisions", "Decisions", "Sessions/session-B.md"),
+        _session_heading("c_decisions", "Decisions", "Sessions/session-C.md"),
+        _session_heading("a_open_items", "Open items", "Sessions/session-A.md"),
+        _session_heading("b_open_items", "Open items", "Sessions/session-B.md"),
+    ], "edges": [], "hyperedges": [], "input_tokens": 0, "output_tokens": 0}
+
+    G = build_merge([extraction], graph_path=None, dedup=True)
+    assert G.number_of_nodes() == 5, (
+        "unstamped headings merged across files -- #3094's exact-pass leak")
+    assert {d.get("source_file") for _, d in G.nodes(data=True)} == {
+        "Sessions/session-A.md", "Sessions/session-B.md", "Sessions/session-C.md"}
+
+
+@pytest.mark.parametrize("file_type", ["document", "rationale"])
+def test_dedup_never_merges_unstamped_nodes_across_files(file_type):
+    """The node ids follow the LLM `{stem}_{entity}` contract here, so the
+    `_reads_as_file_entity` own-node proof reads them as entities: only the
+    missing stamp keeps them apart (#3094)."""
+    nodes = [
+        {"id": "sessions_session_%s_decisions" % doc, "label": "Decisions",
+         "file_type": file_type, "source_file": "Sessions/session-%s.md" % doc.upper()}
+        for doc in ("a", "b", "c")
+    ]
+    result_nodes, _ = deduplicate_entities(nodes, [], communities={})
+    assert len(result_nodes) == 3
+    assert {n["source_file"] for n in result_nodes} == {
+        "Sessions/session-A.md", "Sessions/session-B.md", "Sessions/session-C.md"}
+
+
+def test_dedup_unstamped_document_nodes_still_merge_within_one_file():
+    """Only the cross-file residue changed (#3094): an unstamped exact
+    duplicate inside one file still merges."""
+    nodes = [
+        {"id": "sessions_session_a_decisions", "label": "Decisions",
+         "file_type": "document", "source_file": "Sessions/session-A.md"},
+        {"id": "sessions_session_a_decisions_2", "label": "decisions",
+         "file_type": "document", "source_file": "Sessions/session-A.md"},
+    ]
+    result_nodes, _ = deduplicate_entities(nodes, [], communities={})
+    assert len(result_nodes) == 1
+
+
+def test_build_merge_dedup_still_merges_stamped_entities_across_files():
+    """#296 end to end next to #3094: a person stamped `entity` in three notes
+    collapses to one node, while the same notes' unstamped and `heading`
+    sections stay one per file."""
+    from graphify.build import build_merge
+
+    nodes = []
+    for i, variant in enumerate(_CYRIL_VARIANTS, start=1):
+        src = "journal/2024-03-0%d.md" % i
+        stem = "journal_2024_03_0%d" % i
+        nodes.append({"id": stem + "_cyrilxbt", "label": variant,
+                      "file_type": "document", "node_kind": "entity",
+                      "source_file": src})
+        nodes.append({"id": stem + "_decisions", "label": "Decisions",
+                      "file_type": "document", "source_file": src})
+        nodes.append({"id": stem + "_next_steps", "label": "Next steps",
+                      "file_type": "document", "node_kind": "heading",
+                      "source_file": src})
+    extraction = {"nodes": nodes, "edges": [], "hyperedges": [],
+                  "input_tokens": 0, "output_tokens": 0}
+
+    G = build_merge([extraction], graph_path=None, dedup=True)
+    labels = sorted(d.get("label") for _, d in G.nodes(data=True))
+    assert G.number_of_nodes() == 7, labels
+    assert labels.count("Decisions") == 3
+    assert labels.count("Next steps") == 3
+    assert sum(1 for label in labels if "cyril" in label.lower()) == 1

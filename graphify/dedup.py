@@ -315,10 +315,22 @@ def _defines_id(node: dict) -> bool:
 # #1284 sense — two files' `## Decisions` sections are two sections (#3094).
 #
 # PRODUCER CONTRACT: an extractor that mints a node standing for a *part* of its
-# source file (a section, a sheet, a slide) must stamp one of these. The gate
-# below reads an unstamped node as an entity, so an unstamped structural node is
-# eligible to merge with its namesake in another file.
+# source file (a section, a sheet, a slide) must stamp one of these.
+# `_reads_as_file_entity` below reads an unstamped node as an entity, which is
+# why Pass 1's cross-file residue also requires `_FILE_ENTITY_NODE_KINDS`
+# rather than relying on that predicate alone (#3094).
 _FILE_STRUCTURE_NODE_KINDS = frozenset({"page", "heading"})
+
+# `node_kind` values with which a producer positively states that a
+# document/rationale node is an entity found inside its file (a person, a
+# project), not a section of it. Pass 1's cross-file residue requires this
+# stamp: an UNSTAMPED document/rationale node is unproven either way, and the
+# LLM extraction path never stamped anything, so reading absence as entity-ness
+# let three files' `## Decisions` collapse into one and drop the other two
+# files from the graph (#3094). Under-merging an unstamped entity leaves a
+# duplicate; over-merging an unstamped heading destroys provenance, so the
+# unproven case stays blocked.
+_FILE_ENTITY_NODE_KINDS = frozenset({"entity"})
 
 
 def _reads_as_file_entity(node: dict) -> bool:
@@ -339,9 +351,9 @@ def _reads_as_file_entity(node: dict) -> bool:
       honoured when present, but ABSENCE OF THE MARKER IS NOT PROOF OF
       ENTITY-NESS: a producer minting sub-file nodes without stamping
       `node_kind` (see the contract above) yields structural nodes that this
-      returns True for, and two such nodes sharing a label in different files
-      would merge. The conservative fix is on the producer side — stamp
-      `node_kind` — not a guess here about what an unstamped node meant.
+      returns True for. This predicate does not guess what an unstamped node
+      meant; Pass 1's cross-file residue instead also requires the positive
+      ``node_kind: "entity"`` stamp, so such nodes stay unmerged (#3094).
 
     A node that cannot be checked at all (no ID, no provenance) answers False
     and stays blocked.
@@ -733,7 +745,9 @@ def deduplicate_entities(
         # the file's extension, not from anything about itself, so in note-heavy
         # corpora almost no entity node is typed `concept` and this merge never
         # got to run on them. A file's own node and its headings still never
-        # merge (#1284, #3094).
+        # merge (#1284, #3094). The producer must SAY the node is an entity
+        # (`node_kind: "entity"`): an unstamped node may just as well be a
+        # heading, and LLM output did not stamp headings (#3094).
         # Provenance is required (#1178), and the entropy gate mirrors Pass 2 so
         # short generic labels ("API") stay distinct — both untouched here.
         # Scoped to this exact-normalization pass: Pass 2's fuzzy
@@ -744,6 +758,7 @@ def deduplicate_entities(
             (n for n in group
              if (n.get("file_type") == "concept"
                  or (n.get("file_type") in _FILE_ANCHORED_NONCODE
+                     and n.get("node_kind") in _FILE_ENTITY_NODE_KINDS
                      and _reads_as_file_entity(n)))
              and (n.get("source_file") or "")
              and _entropy(n.get("label", "")) >= _ENTROPY_THRESHOLD),
